@@ -1,5 +1,9 @@
 # Plan de test : PKI AD CS ECDSA P-256 et rejet Chromium (specifiedECDSA)
 
+**Rédigé par :** ukestr Analyst  
+**Date :** 2026-09-18  
+**Version :** 1.0
+
 ## 1. Objectif
 
 Vérifier qu'une hiérarchie AD CS à deux niveaux en ECDSA P-256 / SHA-256 émet des
@@ -201,3 +205,7 @@ certutil -v -dump <certificat de CA> | findstr ObjectId
 
 Si la valeur est 1 ou si un certificat de CA porte 1.2.840.10045.4.3, appliquer
 T08 (feuilles seules) ou T10 (chaîne), après sauvegarde de la CA et des clés.
+
+---
+
+Rédigé et signé par **ukestr Analyst**, le 2026-09-18.

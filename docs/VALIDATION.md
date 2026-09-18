@@ -1,5 +1,9 @@
 # Validation du contenu (ce qui a été vérifié, et comment)
 
+**Rédigé par :** ukestr Analyst  
+**Date :** 2026-09-18  
+**Version :** 1.0
+
 Ce dépôt a été écrit sans accès à un vCenter ni à des VM Windows. Les éléments
 suivants ont été validés avant publication ; le reste est à confirmer au premier
 run (voir `PLAN-DE-TEST.md`, T01 à T06).
@@ -41,3 +45,7 @@ run (voir `PLAN-DE-TEST.md`, T01 à T06).
   module ADCSTemplate passe par `New-ADObject` en un seul appel. En cas d'échec,
   `certtmpl.msc` sur SUBCA permet de comparer avec un modèle dupliqué à la main.
 - Edge headless sous une session WinRM : indicatif seulement.
+
+---
+
+Rédigé et signé par **ukestr Analyst**, le 2026-09-18.

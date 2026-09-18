@@ -131,3 +131,7 @@ automatiquement, `Policy\RequestDisposition=1`).
   comptes Administrator, mot de passe DSRM dans le vault.
 - Les fichiers échangés entre CA transitent par `artifacts/` sur le contrôleur.
 - Le test Edge headless est un indicateur ; la référence reste Edge ouvert à la main.
+
+## Auteur
+
+Documentation et plan de test rédigés par **ukestr Analyst** (2026-09-18).
