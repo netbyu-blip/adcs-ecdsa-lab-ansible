@@ -1,0 +1,71 @@
+---
+# Avant la jonction au domaine, SUBCA et CLIENT sont joints avec le compte Administrator LOCAL
+# (les group_vars de domain_members basculent ensuite sur LAB\Administrator + become runas).
+- name: Provisionner les VM sur vSphere et amorcer WinRM
+  hosts: windows
+  gather_facts: false
+  vars: { ansible_user: Administrator, ansible_become: false }
+  tags: [provision]
+  roles:
+    - vmware_vm
+
+- name: Configuration commune
+  hosts: windows
+  gather_facts: true
+  vars: { ansible_user: Administrator, ansible_become: false }
+  tags: [common]
+  roles:
+    - win_common
+
+- name: Contrôleur de domaine {{ domain_name }} + DNS
+  hosts: dc
+  tags: [dc]
+  roles:
+    - win_dc
+
+- name: Jonction de SUBCA et CLIENT au domaine
+  hosts: domain_members
+  vars: { ansible_user: Administrator, ansible_become: false }
+  tags: [join]
+  roles:
+    - win_domain_join
+
+- name: CA racine autonome ECDSA P-256 (hors domaine)
+  hosts: rootca
+  tags: [rootca]
+  roles:
+    - adcs_rootca
+
+- name: CA subordonnée d'entreprise + modèle ECDSA + Web Enrollment
+  hosts: subca
+  tags: [subca]
+  roles:
+    - adcs_subca
+
+- name: Certificat feuille ECDSA pour IIS (modèle {{ pki_template_name }})
+  hosts: subca
+  tags: [leaf]
+  roles:
+    - iis_leaf
+
+- name: Client de test (confiance + vérifications)
+  hosts: client
+  tags: [client]
+  roles:
+    - win_client
+
+- name: Éteindre la CA racine
+  hosts: rootca
+  gather_facts: false
+  tags: [never, root_offline]
+  tasks:
+    - name: Arrêt propre de l'invité ROOTCA
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ vcenter_datacenter }}"
+        name: "{{ inventory_hostname }}"
+        state: shutdownguest
+      delegate_to: localhost

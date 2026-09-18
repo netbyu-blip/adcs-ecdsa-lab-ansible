@@ -1,0 +1,7 @@
+---
+# Copier vers vault.yml, remplacer les valeurs, puis : ansible-vault encrypt inventory/group_vars/vault.yml
+# vault.yml est ignoré par git.
+vcenter_username: administrator@vsphere.local
+vcenter_password: CHANGEME
+win_admin_password: CHANGEME-Complexe-1   # Administrator local de toutes les VM, puis LAB\Administrator
+dsrm_password: CHANGEME-Complexe-2        # mode restauration des services d'annuaire (DC01)

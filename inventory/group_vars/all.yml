@@ -1,0 +1,60 @@
+---
+# ---- vSphere ---------------------------------------------------------------
+vcenter_hostname: vcenter.example.com
+vcenter_validate_certs: false
+vcenter_datacenter: DC1
+vcenter_cluster: Cluster1
+vcenter_datastore: datastore1
+vcenter_folder: "/{{ vcenter_datacenter }}/vm/LAB-PKI"
+
+vm_template_server: tpl-ws2022-eval
+vm_template_client: tpl-ws2022-eval        # ou tpl-win11-eval
+vm_cpu: 2
+vm_memory_mb: 4096
+vm_timezone: "035"                          # Eastern Time (US & Canada)
+
+lab_network:
+  portgroup: LAB-PKI
+  netmask: 255.255.255.0
+  gateway: 10.10.10.1
+
+# ---- Active Directory -------------------------------------------------------
+domain_name: lab.local
+domain_netbios: LAB
+dc_ip: "{{ hostvars[groups['dc'][0]].ansible_host }}"
+# Enregistrements DNS créés sur DC01 (les membres du domaine s'y inscrivent seuls)
+lab_dns_records:
+  - { name: rootca, ip: 10.10.10.10 }
+  - { name: pki,    ip: 10.10.10.20 }
+  - { name: www,    ip: 10.10.10.20 }
+
+# ROOTCA reste en workgroup : fichier hosts uniquement sur elle
+lab_hosts_entries:
+  - ip: 10.10.10.5
+    names: [dc01.lab.local]
+  - ip: 10.10.10.20
+    names: [subca.lab.local, pki.lab.local, www.lab.local]
+
+# ---- PKI --------------------------------------------------------------------
+pki_root_ca_name: "LAB Root CA"
+pki_issuing_ca_name: "LAB Issuing CA"
+pki_issuing_ca_type: EnterpriseSubordinateCA   # ou StandaloneSubordinateCA
+pki_template_name: LabWebServerECDSA           # modèle v4, ECDSA P-256, sujet fourni dans la requête
+pki_template_display_name: "Lab Web Server ECDSA"
+pki_provider: "ECDSA_P256#Microsoft Software Key Storage Provider"
+pki_key_length: 256
+pki_hash: SHA256
+pki_root_validity_years: 10
+pki_subca_validity_years: 5
+pki_http_base: "http://pki.lab.local/pki"
+pki_lab_dir: 'C:\ProgramData\lab'
+pki_local_dir: "{{ playbook_dir }}/artifacts"   # échanges via le contrôleur
+
+# 0 = sha256ECDSA (normal), 1 = specifiedECDSA (reproduit l'erreur Edge)
+rootca_alternate_signature_algorithm: 0        # dans CAPolicy.inf, affecte toute la chaîne
+subca_alternate_signature_algorithm: 0         # registre CA\CSP, affecte la feuille et les CRL
+
+# ---- Certificat feuille IIS --------------------------------------------------
+leaf_cn: www.lab.local
+leaf_sans: [www.lab.local, subca.lab.local]
+leaf_reissue: false                            # true = supprime et réémet à chaque exécution

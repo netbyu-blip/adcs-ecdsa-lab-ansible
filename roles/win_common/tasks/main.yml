@@ -1,0 +1,26 @@
+---
+- name: Répertoire de travail du lab
+  ansible.windows.win_file:
+    path: "{{ pki_lab_dir }}"
+    state: directory
+
+- name: Entrées du fichier hosts (ROOTCA est hors domaine, sans DNS)
+  when: inventory_hostname in groups['rootca']
+  ansible.windows.win_hosts:
+    state: present
+    action: set
+    canonical_name: "{{ item.names[0] }}"
+    aliases: "{{ item.names[1:] }}"
+    ip_address: "{{ item.ip }}"
+  loop: "{{ lab_hosts_entries }}"
+  loop_control:
+    label: "{{ item.ip }} {{ item.names | join(' ') }}"
+
+- name: Autoriser ICMP entrant (diagnostic)
+  community.windows.win_firewall_rule:
+    name: Lab ICMPv4
+    protocol: icmpv4
+    direction: in
+    action: allow
+    state: present
+    enabled: true

@@ -1,0 +1,32 @@
+---
+- name: Nom du fichier certificat racine
+  ansible.builtin.set_fact:
+    rootca_cert_file: "{{ lookup('ansible.builtin.fileglob', pki_local_dir ~ '/rootca/*.crt', wantlist=True) | first | basename }}"
+
+- name: Déposer racine, sous-CA et feuille
+  ansible.windows.win_copy:
+    src: "{{ item.src }}"
+    dest: "{{ pki_lab_dir }}\\{{ item.dest }}"
+  loop:
+    - { src: "{{ pki_local_dir }}/rootca/{{ rootca_cert_file }}", dest: rootca.crt }
+    - { src: "{{ pki_local_dir }}/subca/subca.cer", dest: subca.cer }
+    - { src: "{{ pki_local_dir }}/leaf/www.cer", dest: www.cer }
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Racine dans Trusted Root
+  ansible.windows.win_certificate_store:
+    path: "{{ pki_lab_dir }}\\rootca.crt"
+    store_name: Root
+    store_location: LocalMachine
+    state: present
+
+- name: Sous-CA dans Intermediate Certification Authorities
+  ansible.windows.win_certificate_store:
+    path: "{{ pki_lab_dir }}\\subca.cer"
+    store_name: CA
+    store_location: LocalMachine
+    state: present
+
+- name: Tests
+  ansible.builtin.include_tasks: test.yml

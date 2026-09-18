@@ -1,0 +1,28 @@
+---
+# Usage :
+#   ansible-playbook repro.yml -e subca_alternate_signature_algorithm=1   # casse (specifiedECDSA)
+#   ansible-playbook repro.yml -e subca_alternate_signature_algorithm=0   # répare (sha256ECDSA)
+- name: Basculer AlternateSignatureAlgorithm sur la sous-CA et réémettre la feuille
+  hosts: subca
+  vars:
+    leaf_reissue: true
+  tasks:
+    - name: Positionner AlternateSignatureAlgorithm
+      ansible.builtin.include_role:
+        name: adcs_subca
+        tasks_from: altsig.yml
+
+    - name: Redémarrer certsvc avant réémission
+      ansible.builtin.meta: flush_handlers
+
+    - name: Réémettre le certificat feuille et refaire le binding IIS
+      ansible.builtin.include_role:
+        name: iis_leaf
+
+- name: Vérifier côté client
+  hosts: client
+  tasks:
+    - name: Tests CryptoAPI et Edge
+      ansible.builtin.include_role:
+        name: win_client
+        tasks_from: test.yml

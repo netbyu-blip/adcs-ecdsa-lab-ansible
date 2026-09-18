@@ -1,0 +1,25 @@
+[NewRequest]
+Subject="CN={{ leaf_cn }}"
+KeyAlgorithm=ECDSA_P256
+KeyLength=256
+ProviderName="Microsoft Software Key Storage Provider"
+MachineKeySet=TRUE
+Exportable=FALSE
+KeyUsage=0x80
+HashAlgorithm=SHA256
+RequestType=PKCS10
+FriendlyName="Lab IIS {{ leaf_cn }}"
+
+{% if pki_issuing_ca_type == 'EnterpriseSubordinateCA' %}
+[RequestAttributes]
+CertificateTemplate={{ pki_template_name }}
+
+{% endif %}
+[EnhancedKeyUsageExtension]
+OID=1.3.6.1.5.5.7.3.1
+
+[Extensions]
+2.5.29.17 = "{text}"
+{% for san in leaf_sans %}
+_continue_ = "DNS={{ san }}{{ '&' if not loop.last }}"
+{% endfor %}

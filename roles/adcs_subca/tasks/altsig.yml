@@ -1,0 +1,9 @@
+---
+# 0 = sha256ECDSA (1.2.840.10045.4.3.2), 1 = specifiedECDSA (1.2.840.10045.4.3)
+- name: "CA\\CSP\\AlternateSignatureAlgorithm = {{ subca_alternate_signature_algorithm }}"
+  ansible.windows.win_regedit:
+    path: 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\{{ pki_issuing_ca_name }}\CSP'
+    name: AlternateSignatureAlgorithm
+    data: "{{ subca_alternate_signature_algorithm | int }}"
+    type: dword
+  notify: restart certsvc

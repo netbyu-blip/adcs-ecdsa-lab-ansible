@@ -1,0 +1,25 @@
+---
+# Exécuté avec le compte Administrator LOCAL (vars du play), avant la jonction.
+- name: Client DNS vers le contrôleur de domaine
+  ansible.windows.win_dns_client:
+    adapter_names: "*"
+    dns_servers:
+      - "{{ dc_ip }}"
+
+- name: Attendre que le DC résolve le domaine
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      Resolve-DnsName -Name '{{ domain_name }}' -Type A -Server '{{ dc_ip }}' -ErrorAction Stop | Out-Null
+  register: dns_ok
+  retries: 12
+  delay: 10
+  until: dns_ok is succeeded
+
+- name: Joindre {{ domain_name }} (redémarre si nécessaire)
+  microsoft.ad.membership:
+    dns_domain_name: "{{ domain_name }}"
+    domain_admin_user: "{{ domain_netbios }}\\Administrator"
+    domain_admin_password: "{{ win_admin_password }}"
+    state: domain
+    reboot: true

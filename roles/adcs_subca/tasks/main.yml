@@ -1,0 +1,150 @@
+---
+- name: Rôles AD CS CA, Web Enrollment et IIS
+  ansible.windows.win_feature:
+    name:
+      - ADCS-Cert-Authority
+      - ADCS-Web-Enrollment
+      - Web-Server
+    include_management_tools: true
+    state: present
+
+- name: Pare-feu HTTP/HTTPS (CDP/AIA, certsrv, site de test)
+  community.windows.win_firewall_rule:
+    name: Lab HTTP HTTPS
+    localport: 80,443
+    protocol: tcp
+    direction: in
+    action: allow
+    state: present
+    enabled: true
+
+- name: Répertoire de publication CDP/AIA
+  ansible.windows.win_file:
+    path: 'C:\inetpub\wwwroot\pki'
+    state: directory
+
+- name: Publier certificat et CRL de la racine sur {{ pki_http_base }}
+  ansible.windows.win_copy:
+    src: "{{ pki_local_dir }}/rootca/"
+    dest: 'C:\inetpub\wwwroot\pki\'
+
+- name: Nom du fichier certificat racine
+  ansible.builtin.set_fact:
+    rootca_cert_file: "{{ lookup('ansible.builtin.fileglob', pki_local_dir ~ '/rootca/*.crt', wantlist=True) | first | basename }}"
+
+- name: Racine dans Trusted Root Certification Authorities
+  ansible.windows.win_certificate_store:
+    path: 'C:\inetpub\wwwroot\pki\{{ rootca_cert_file }}'
+    store_name: Root
+    store_location: LocalMachine
+    state: present
+
+- name: Publier la racine dans AD (conteneur Certification Authorities, confiance des membres du domaine)
+  when: pki_issuing_ca_type == 'EnterpriseSubordinateCA'
+  ansible.windows.win_powershell:
+    creates: "{{ pki_lab_dir }}\\root.dspublished"
+    script: |
+      $ErrorActionPreference = 'Stop'
+      & certutil.exe -dspublish -f 'C:\inetpub\wwwroot\pki\{{ rootca_cert_file }}' RootCA | Out-Null
+      if ($LASTEXITCODE) { throw "certutil -dspublish code $LASTEXITCODE" }
+      New-Item -ItemType File -Path '{{ pki_lab_dir }}\root.dspublished' -Force | Out-Null
+
+- name: CAPolicy.inf
+  ansible.windows.win_template:
+    src: CAPolicy.inf.j2
+    dest: 'C:\Windows\CAPolicy.inf'
+
+- name: Installer la CA subordonnée ({{ pki_issuing_ca_type }}), génère la requête
+  ansible.windows.win_powershell:
+    creates: "{{ pki_lab_dir }}\\subca.req"
+    script: |
+      $ErrorActionPreference = 'Stop'
+      Install-AdcsCertificationAuthority -CAType {{ pki_issuing_ca_type }} `
+        -CACommonName '{{ pki_issuing_ca_name }}' `
+        -CryptoProviderName '{{ pki_provider }}' `
+        -KeyLength {{ pki_key_length }} `
+        -HashAlgorithmName {{ pki_hash }} `
+        -OutputCertRequestFile '{{ pki_lab_dir }}\subca.req' `
+        -Force -WarningAction SilentlyContinue | Out-Null
+
+- name: Rapatrier la requête sur le contrôleur
+  ansible.builtin.fetch:
+    src: "{{ pki_lab_dir }}\\subca.req"
+    dest: "{{ pki_local_dir }}/subca/subca.req"
+    flat: true
+
+# ---- Signature par la racine (délégation) ------------------------------------
+- name: Déposer la requête sur la racine
+  ansible.windows.win_copy:
+    src: "{{ pki_local_dir }}/subca/subca.req"
+    dest: "{{ pki_lab_dir }}\\subca.req"
+  delegate_to: "{{ groups['rootca'] | first }}"
+
+- name: Émettre le certificat de la sous-CA sur la racine
+  ansible.windows.win_powershell:
+    creates: "{{ pki_lab_dir }}\\subca.p7b"
+    script: |
+      $ErrorActionPreference = 'Stop'
+      & certreq.exe -submit -config - '{{ pki_lab_dir }}\subca.req' '{{ pki_lab_dir }}\subca.cer' '{{ pki_lab_dir }}\subca.p7b' | Out-Null
+      if ($LASTEXITCODE) { throw "certreq -submit code $LASTEXITCODE" }
+  delegate_to: "{{ groups['rootca'] | first }}"
+
+- name: Rapatrier certificat et chaîne de la sous-CA
+  ansible.builtin.fetch:
+    src: "{{ pki_lab_dir }}\\{{ item }}"
+    dest: "{{ pki_local_dir }}/subca/{{ item }}"
+    flat: true
+  loop: [subca.cer, subca.p7b]
+  delegate_to: "{{ groups['rootca'] | first }}"
+
+# ---- Retour sur la sous-CA -----------------------------------------------------
+- name: Déposer la chaîne sur la sous-CA
+  ansible.windows.win_copy:
+    src: "{{ pki_local_dir }}/subca/subca.p7b"
+    dest: "{{ pki_lab_dir }}\\subca.p7b"
+
+- name: Installer le certificat de CA, configurer et démarrer la sous-CA
+  ansible.windows.win_powershell:
+    creates: "{{ pki_lab_dir }}\\subca.configured"
+    script: |
+      $ErrorActionPreference = 'Stop'
+      function Cu { & certutil.exe @args | Out-Null; if ($LASTEXITCODE) { throw "certutil $args (code $LASTEXITCODE)" } }
+      Cu -installcert '{{ pki_lab_dir }}\subca.p7b'
+      Cu -setreg CA\CRLPublicationURLs    '1:%WINDIR%\system32\CertSrv\CertEnroll\%3%8.crl\n2:{{ pki_http_base }}/%3%8.crl'
+      Cu -setreg CA\CACertPublicationURLs '1:%WINDIR%\system32\CertSrv\CertEnroll\%1_%3%4.crt\n2:{{ pki_http_base }}/%1_%3%4.crt'
+      Cu -setreg CA\CRLPeriodUnits 7
+      Cu -setreg CA\CRLPeriod 'Days'
+      Cu -setreg CA\CRLDeltaPeriodUnits 0
+      Cu -setreg CA\ValidityPeriodUnits 2
+      Cu -setreg CA\ValidityPeriod 'Years'
+      # Ne bloque pas le démarrage si la CRL de la racine (hors ligne) est injoignable
+      Cu -setreg CA\CRLFlags +CRLF_REVCHECK_IGNORE_OFFLINE
+      # Émission immédiate (sinon toute requête reste "pending" sur une CA autonome)
+      Cu -setreg Policy\RequestDisposition 1
+      Set-Service certsvc -StartupType Automatic
+      Restart-Service certsvc
+      Start-Sleep -Seconds 5
+      Cu -crl
+      Copy-Item 'C:\Windows\System32\CertSrv\CertEnroll\*' 'C:\inetpub\wwwroot\pki\' -Force
+      New-Item -ItemType File -Path '{{ pki_lab_dir }}\subca.configured' -Force | Out-Null
+
+- name: AlternateSignatureAlgorithm (valeur courante du registre)
+  ansible.builtin.include_tasks: altsig.yml
+
+- name: Modèle de certificat {{ pki_template_name }} (ECDSA P-256) créé dans AD et publié sur la CA
+  when: pki_issuing_ca_type == 'EnterpriseSubordinateCA'
+  ansible.windows.win_powershell:
+    path: "{{ role_path }}/files/New-LabTemplate.ps1"
+    parameters:
+      Name: "{{ pki_template_name }}"
+      DisplayName: "{{ pki_template_display_name }}"
+      CAName: "{{ pki_issuing_ca_name }}"
+  register: template_result
+
+- name: Web Enrollment (http://subca.lab.local/certsrv)
+  ansible.windows.win_powershell:
+    creates: "{{ pki_lab_dir }}\\webenroll.configured"
+    script: |
+      $ErrorActionPreference = 'Stop'
+      Install-AdcsWebEnrollment -Force | Out-Null
+      New-Item -ItemType File -Path '{{ pki_lab_dir }}\webenroll.configured' -Force | Out-Null

@@ -1,0 +1,49 @@
+---
+- name: Feuille à jour sur le client
+  ansible.windows.win_copy:
+    src: "{{ pki_local_dir }}/leaf/www.cer"
+    dest: "{{ pki_lab_dir }}\\www.cer"
+
+- name: Côté CryptoAPI (équivalent IE) - certutil -verify -urlfetch
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $out = & certutil.exe -verify -urlfetch '{{ pki_lab_dir }}\www.cer' 2>&1
+      $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('{{ pki_lab_dir }}\www.cer')
+      $Ansible.Result = @{
+        certutil_exit = $LASTEXITCODE
+        sig_oid       = $c.SignatureAlgorithm.Value
+        sig_name      = $c.SignatureAlgorithm.FriendlyName
+        derniere_ligne = ($out | Select-Object -Last 1)
+      }
+  register: capi_verify
+
+- name: Côté CryptoAPI - HTTPS avec Invoke-WebRequest
+  ansible.windows.win_uri:
+    url: "https://{{ leaf_cn }}/"
+    method: GET
+    return_content: false
+  register: capi_https
+  ignore_errors: true
+
+- name: Côté Chromium - Edge headless, recherche d'un code ERR_CERT_* dans la page
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $edge = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+                'C:\Program Files\Microsoft\Edge\Application\msedge.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+      if (-not $edge) { $Ansible.Result = 'Edge introuvable sur ce client'; return }
+      $edgeProfile = '{{ pki_lab_dir }}\edge-profile'
+      $dom = & $edge --headless=new --disable-gpu --no-first-run --no-default-browser-check `
+                     "--user-data-dir=$edgeProfile" --dump-dom "https://{{ leaf_cn }}/" 2>$null
+      $errs = ($dom | Select-String -Pattern 'ERR_CERT_[A-Z_]+' -AllMatches).Matches.Value | Select-Object -Unique
+      $Ansible.Result = if ($errs) { "Edge : $($errs -join ', ')" } else { 'Edge : aucune erreur ERR_CERT_* dans le DOM (page servie)' }
+  register: edge_check
+
+- name: Bilan
+  ansible.builtin.debug:
+    msg:
+      - "Signature feuille : {{ capi_verify.result.sig_name }} ({{ capi_verify.result.sig_oid }})"
+      - "certutil -verify  : code {{ capi_verify.result.certutil_exit }} - {{ capi_verify.result.derniere_ligne }}"
+      - "CryptoAPI HTTPS   : {{ 'OK ' ~ capi_https.status_code if not capi_https.failed else 'ECHEC - ' ~ capi_https.msg }}"
+      - "{{ edge_check.result }}"

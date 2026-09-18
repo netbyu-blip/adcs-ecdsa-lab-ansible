@@ -1,0 +1,11 @@
+---
+# Après jonction : compte du domaine + become "runas" interactif.
+# Le become contourne le double saut NTLM (WinRM -> SUBCA -> LDAP sur le DC),
+# indispensable pour Install-AdcsCertificationAuthority en mode Enterprise,
+# certutil -dspublish et la création du modèle de certificat dans AD.
+ansible_user: "{{ domain_netbios }}\\Administrator"
+ansible_become: true
+ansible_become_method: runas
+ansible_become_user: "{{ domain_netbios }}\\Administrator"
+ansible_become_password: "{{ win_admin_password }}"
+ansible_become_flags: logon_type=interactive logon_flags=with_profile

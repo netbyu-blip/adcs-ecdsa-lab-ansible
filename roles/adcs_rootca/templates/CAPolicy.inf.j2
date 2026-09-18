@@ -1,0 +1,14 @@
+[Version]
+Signature="$Windows NT$"
+
+[Certsrv_Server]
+RenewalKeyLength={{ pki_key_length }}
+RenewalValidityPeriod=Years
+RenewalValidityPeriodUnits={{ pki_root_validity_years }}
+CRLPeriod=Weeks
+CRLPeriodUnits=26
+CRLDeltaPeriod=Days
+CRLDeltaPeriodUnits=0
+LoadDefaultTemplates=0
+; 1 = signature specifiedECDSA (OID 1.2.840.10045.4.3), rejetée par Chromium/OpenSSL
+AlternateSignatureAlgorithm={{ rootca_alternate_signature_algorithm }}

@@ -1,0 +1,58 @@
+---
+- name: Rôle AD CS Certification Authority
+  ansible.windows.win_feature:
+    name: ADCS-Cert-Authority
+    include_management_tools: true
+    state: present
+
+- name: CAPolicy.inf (lu à l'installation et aux renouvellements)
+  ansible.windows.win_template:
+    src: CAPolicy.inf.j2
+    dest: 'C:\Windows\CAPolicy.inf'
+
+- name: Installer la CA racine autonome ({{ pki_provider }})
+  ansible.windows.win_powershell:
+    creates: 'C:\Windows\System32\CertSrv\CertEnroll'
+    script: |
+      $ErrorActionPreference = 'Stop'
+      Install-AdcsCertificationAuthority -CAType StandaloneRootCA `
+        -CACommonName '{{ pki_root_ca_name }}' `
+        -CryptoProviderName '{{ pki_provider }}' `
+        -KeyLength {{ pki_key_length }} `
+        -HashAlgorithmName {{ pki_hash }} `
+        -ValidityPeriod Years -ValidityPeriodUnits {{ pki_root_validity_years }} `
+        -Force | Out-Null
+
+- name: CDP/AIA HTTP, durée des certs émis, émission automatique, première CRL
+  ansible.windows.win_powershell:
+    creates: "{{ pki_lab_dir }}\\rootca.configured"
+    script: |
+      $ErrorActionPreference = 'Stop'
+      function Cu { & certutil.exe @args | Out-Null; if ($LASTEXITCODE) { throw "certutil $args (code $LASTEXITCODE)" } }
+      Cu -setreg CA\CRLPublicationURLs    '1:%WINDIR%\system32\CertSrv\CertEnroll\%3%8.crl\n2:{{ pki_http_base }}/%3%8.crl'
+      Cu -setreg CA\CACertPublicationURLs '1:%WINDIR%\system32\CertSrv\CertEnroll\%1_%3%4.crt\n2:{{ pki_http_base }}/%1_%3%4.crt'
+      Cu -setreg CA\CRLPeriodUnits 26
+      Cu -setreg CA\CRLPeriod 'Weeks'
+      Cu -setreg CA\CRLDeltaPeriodUnits 0
+      Cu -setreg CA\ValidityPeriodUnits {{ pki_subca_validity_years }}
+      Cu -setreg CA\ValidityPeriod 'Years'
+      Cu -setreg Policy\RequestDisposition 1
+      Restart-Service certsvc
+      Start-Sleep -Seconds 5
+      Cu -crl
+      New-Item -ItemType File -Path '{{ pki_lab_dir }}\rootca.configured' -Force | Out-Null
+
+- name: Lister certificat et CRL de la racine
+  ansible.windows.win_find:
+    paths: 'C:\Windows\System32\CertSrv\CertEnroll'
+    patterns: ['*.crt', '*.crl']
+  register: rootca_files
+
+- name: Rapatrier certificat et CRL sur le contrôleur
+  ansible.builtin.fetch:
+    src: "{{ item.path }}"
+    dest: "{{ pki_local_dir }}/rootca/{{ item.filename }}"
+    flat: true
+  loop: "{{ rootca_files.files }}"
+  loop_control:
+    label: "{{ item.filename }}"

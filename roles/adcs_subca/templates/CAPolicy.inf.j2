@@ -1,0 +1,14 @@
+[Version]
+Signature="$Windows NT$"
+
+[Certsrv_Server]
+RenewalKeyLength={{ pki_key_length }}
+RenewalValidityPeriod=Years
+RenewalValidityPeriodUnits={{ pki_subca_validity_years }}
+CRLPeriod=Days
+CRLPeriodUnits=7
+CRLDeltaPeriod=Days
+CRLDeltaPeriodUnits=0
+LoadDefaultTemplates=0
+; Valeur initiale ; ensuite pilotée par le registre CA\CSP\AlternateSignatureAlgorithm (altsig.yml)
+AlternateSignatureAlgorithm={{ subca_alternate_signature_algorithm }}

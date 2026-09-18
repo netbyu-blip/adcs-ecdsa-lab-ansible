@@ -1,0 +1,64 @@
+---
+- name: Fichier de requête www.inf (ECDSA P-256, SAN)
+  ansible.windows.win_template:
+    src: www.inf.j2
+    dest: "{{ pki_lab_dir }}\\www.inf"
+
+- name: Émettre le certificat feuille via la sous-CA locale
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $cn = 'CN={{ leaf_cn }}'
+      $reissue = ${{ leaf_reissue | bool }}
+      $lab = '{{ pki_lab_dir }}'
+      $existing = @(Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -eq $cn)
+      if ($existing.Count -gt 0 -and -not $reissue) {
+          $Ansible.Changed = $false
+          $Ansible.Result = ($existing | Sort-Object NotBefore -Descending | Select-Object -First 1).Thumbprint
+          return
+      }
+      $existing | Remove-Item -Force
+      Remove-Item "$lab\www.req", "$lab\www.cer", "$lab\www.rsp" -ErrorAction SilentlyContinue
+      & certreq.exe -new -q "$lab\www.inf" "$lab\www.req" | Out-Null
+      if ($LASTEXITCODE) { throw "certreq -new code $LASTEXITCODE" }
+      & certreq.exe -submit -q -config - "$lab\www.req" "$lab\www.cer" | Out-Null
+      if ($LASTEXITCODE) { throw "certreq -submit code $LASTEXITCODE (RequestDisposition=1 sur la sous-CA ?)" }
+      & certreq.exe -accept -q "$lab\www.cer" | Out-Null
+      if ($LASTEXITCODE) { throw "certreq -accept code $LASTEXITCODE" }
+      $new = Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -eq $cn | Sort-Object NotBefore -Descending | Select-Object -First 1
+      $Ansible.Result = $new.Thumbprint
+  register: leaf_issue
+
+- name: Binding HTTPS du site par défaut
+  community.windows.win_iis_webbinding:
+    name: Default Web Site
+    protocol: https
+    port: 443
+    ip: "*"
+    certificate_hash: "{{ leaf_issue.result }}"
+    certificate_store_name: My
+    state: present
+
+- name: Algorithme de signature du certificat feuille
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('{{ pki_lab_dir }}\www.cer')
+      $Ansible.Result = @{
+        subject   = $c.Subject
+        thumbprint = $c.Thumbprint
+        sig_oid   = $c.SignatureAlgorithm.Value
+        sig_name  = $c.SignatureAlgorithm.FriendlyName
+        attendu   = 'sha256ECDSA = 1.2.840.10045.4.3.2 ; specifiedECDSA = 1.2.840.10045.4.3 => rejet Chromium'
+      }
+  register: leaf_sig
+
+- name: Résultat
+  ansible.builtin.debug:
+    var: leaf_sig.result
+
+- name: Copier la feuille dans les artefacts (pour le client)
+  ansible.builtin.fetch:
+    src: "{{ pki_lab_dir }}\\www.cer"
+    dest: "{{ pki_local_dir }}/leaf/www.cer"
+    flat: true

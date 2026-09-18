@@ -1,0 +1,40 @@
+---
+- name: Rôles AD DS et DNS
+  ansible.windows.win_feature:
+    name:
+      - AD-Domain-Services
+      - DNS
+    include_management_tools: true
+    state: present
+
+- name: Créer la forêt {{ domain_name }} (redémarre si nécessaire)
+  microsoft.ad.domain:
+    dns_domain_name: "{{ domain_name }}"
+    domain_netbios_name: "{{ domain_netbios }}"
+    safe_mode_password: "{{ dsrm_password }}"
+    install_dns: true
+    create_dns_delegation: false
+    reboot: true
+  register: forest
+
+- name: Attendre que AD DS réponde
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      Get-ADDomain -ErrorAction Stop | Out-Null
+  register: ad_ready
+  retries: 30
+  delay: 10
+  until: ad_ready is succeeded
+
+- name: Enregistrements DNS A du lab
+  community.windows.win_dns_record:
+    zone: "{{ domain_name }}"
+    name: "{{ item.name }}"
+    type: A
+    value: "{{ item.ip }}"
+    state: present
+  loop: "{{ lab_dns_records }}"
+  loop_control:
+    label: "{{ item.name }}.{{ domain_name }} -> {{ item.ip }}"
