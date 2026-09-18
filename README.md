@@ -92,6 +92,7 @@ Le certificat de la sous-CA est alors lui aussi signé en `specifiedECDSA`.
 
 - [`docs/PLAN-DE-TEST.md`](docs/PLAN-DE-TEST.md) : cas de test T01 à T12, attendus, matrice de résultats, transposition en production.
 - [`docs/VALIDATION.md`](docs/VALIDATION.md) : ce qui a été vérifié avant publication (syntaxe, doc Microsoft) et ce qui reste à confirmer.
+- [`docs/ANNEXE-REFERENCES.md`](docs/ANNEXE-REFERENCES.md) : toutes les sources consultées, classées par thème.
 
 ## Vérification manuelle
 

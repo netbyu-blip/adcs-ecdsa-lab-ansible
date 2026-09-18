@@ -235,6 +235,12 @@ certutil -v -dump <certificat de CA> | findstr ObjectId
 Si la valeur est 1 ou si un certificat de CA porte 1.2.840.10045.4.3, appliquer
 T08 (feuilles seules) ou T10 (chaîne), après sauvegarde de la CA et des clés.
 
+## 8. Annexes
+
+Toutes les références (documentation Microsoft, spécifications MS-CRTD / MS-WCCE,
+articles, collections Ansible) sont regroupées dans
+[`ANNEXE-REFERENCES.md`](ANNEXE-REFERENCES.md).
+
 ---
 
 Rédigé et signé par **ukestr Analyst**, le 2026-09-18.
