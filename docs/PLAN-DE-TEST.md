@@ -4,6 +4,35 @@
 **Date :** 2026-09-18  
 **Version :** 1.0
 
+## 0. Contexte
+
+Ce plan découle d'un échange du 2026-09-17 avec Luc, collègue en charge de la PKI,
+qui a posé les questions dans l'ordre suivant :
+
+1. **Rehausser une racine et une sous-CA Microsoft AD CS de RSA / SHA-256 vers
+   ECDSA P-256.** Réponse retenue : Microsoft ne documente pas de conversion en
+   place et recommande une hiérarchie parallèle entièrement ECDSA. Le
+   renouvellement du certificat de CA avec nouvelle clé après modification de
+   `CA\CSP\CNGPublicKeyAlgorithm` est techniquement possible sur un KSP CNG,
+   mais non supporté officiellement.
+2. **Après installation d'une racine et d'une sous-CA ECDSA fonctionnelles, un
+   certificat feuille pour IIS est refusé par Microsoft Edge
+   (`NET::ERR_CERT_INVALID`) mais accepté par Internet Explorer.** Luc avait
+   identifié que l'algorithme de signature apparaissait comme un ECDSA
+   « générique » au lieu de `sha256ECDSA`. Diagnostic : la CA signe avec l'OID
+   `specifiedECDSA` (1.2.840.10045.4.3) quand `AlternateSignatureAlgorithm=1` ;
+   CryptoAPI l'accepte, Chromium et les validateurs non Microsoft non.
+3. **Disposer d'un bac à sable pour tester** : une racine, une sous-CA portant
+   IIS et le certificat feuille, un client pour reproduire l'erreur Edge, les
+   rôles Certification Authority et Web Enrollment installés.
+4. Le lendemain : automatiser ce lab avec Ansible sur VMware, ajouter un
+   contrôleur de domaine pour une CA d'entreprise, publier le tout sur GitHub
+   sans information sensible, documenter le plan de test et valider les
+   commandes PowerShell contre la documentation Microsoft.
+
+Le présent document répond au point 3 et au plan de test demandé au point 4.
+Les cas T07 à T10 reproduisent et corrigent le symptôme décrit au point 2.
+
 ## 1. Objectif
 
 Vérifier qu'une hiérarchie AD CS à deux niveaux en ECDSA P-256 / SHA-256 émet des
